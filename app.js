@@ -8,7 +8,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const RM=matchMedia('(prefers-reduced-motion: reduce)');
 const CATS=['Home','Utility','Subscription','Phone','Insurance','Loan / EMI','Credit Card','Tax','Renewal','Fees','Investment','Other'];
-const EVERY=[[1,'Monthly'],[-2,'Every Few Months'],[3,'Every 3 Months'],[6,'Every 6 Months'],[12,'Yearly'],[-1,'Every Few Years'],[0,'Never (One Time)']];
+const EVERY=[[-7,'Weekly'],[-14,'Every 2 Weeks'],[1,'Monthly'],[-2,'Every Few Months'],[3,'Every 3 Months'],[6,'Every 6 Months'],[12,'Yearly'],[-1,'Every Few Years'],[0,'Never (One Time)']];
 const REMS=[0,1,2,3,5,7,14,30,60,90,180];
 const PRESETS=[['Rent','Home',1,3],['Electricity','Utility',1,3],['Mobile Recharge','Phone',1,2],['Broadband','Utility',1,3],['Credit Card Bill','Credit Card',1,5],['Loan EMI','Loan / EMI',1,3],['Health Insurance','Insurance',12,30],['Term Insurance','Insurance',12,30],['Vehicle Insurance','Insurance',12,30],['Property Tax','Tax',12,30],['Advance Tax','Tax',3,14],['Passport Renewal','Renewal',120,180],['Driving Licence Renewal','Renewal',240,90],['Domain & Hosting','Subscription',12,14]];
 const SCOPE_BASE='https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email openid';
@@ -23,7 +23,10 @@ const str=(v,n)=>String(v??'').slice(0,n),num=(v,lo,hi)=>{v=+v;return Number.isF
 function cleanItem(i,k){if(!i||typeof i!=='object'||!DATE_RE.test(i.due)||!String(i.name??'').trim())return null;
  const o={id:str(i.id,40).replace(/[^\w-]/g,'')||'p'+k,name:str(i.name,120).trim(),cat:CATS.includes(i.cat)?i.cat:'Other',amt:num(i.amt,0,1e12),
   every:Math.round(num(i.every,0,1200)),due:i.due,remind:Math.round(num(i.remind,0,3650)),auto:!!i.auto,notes:str(i.notes,500)};
- if(DATE_RE.test(i.last))o.last=i.last;return o}
+ const wk=Math.round(num(i.wk,0,52));if(wk){o.wk=wk;o.every=0}
+ if(DATE_RE.test(i.last))o.last=i.last;if(DATE_RE.test(i.fin))o.fin=i.fin;
+ if((o.every||o.wk)&&DATE_RE.test(i.end)&&i.end>=i.due){o.end=i.end;o.endBy=i.endBy==='count'?'count':'date'}
+ return o}
 function cleanState(s){if(!s||typeof s!=='object')return null;
  const cal=s.cal&&typeof s.cal==='object'?{on:!!s.cal.on,...(typeof s.cal.id==='string'?{id:s.cal.id}:{}),ev:s.cal.ev&&typeof s.cal.ev==='object'?s.cal.ev:{}}:null;
  return{v:1,items:(Array.isArray(s.items)?s.items:[]).slice(0,5000).map(cleanItem).filter(Boolean),cur:CURS.includes(s.cur)?s.cur:'INR',cal,t:num(s.t,0,9e15),dirty:!!s.dirty}}
@@ -56,31 +59,53 @@ const addM=(s,m)=>{const d=pd(s),day=d.getDate();const t=new Date(d.getFullYear(
 const longD=s=>pd(s).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
 const sym=()=>{try{return(0).toLocaleString('en',{style:'currency',currency:S.cur||'INR',maximumFractionDigits:0}).replace(/[\d\s.,]/g,'')}catch(e){return''}};
 const fmt=n=>{try{return new Intl.NumberFormat(S.cur==='INR'?'en-IN':'en',{style:'currency',currency:S.cur||'INR',maximumFractionDigits:0}).format(n||0)}catch(e){return String(Math.round(n||0))}};
-const evLabel=m=>m===0?'One time':m===1?'Monthly':m===12?'Yearly':m%12===0?'Every '+m/12+' years':'Every '+m+' months';
+/* repeats: every = months (0 = one time), wk = weeks; end = last allowed due date; fin = date it was completed */
+const isRep=i=>i.every>0||i.wk>0;
+const nextDue=(i,d)=>i.wk?addD(d,7*i.wk):addM(d,i.every);
+const evLabel=i=>i.wk?(i.wk===1?'Weekly':i.wk===2?'Every 2 weeks':'Every '+i.wk+' weeks'):(m=>m===0?'One time':m===1?'Monthly':m===12?'Yearly':m%12===0?'Every '+m/12+' years':'Every '+m+' months')(i.every);
+function lastDue(i){if(!isRep(i)||!i.end||!DATE_RE.test(i.due))return null;if(i.end<i.due)return i.due;let d=i.due;
+ for(let n=0;n<5000;n++){const x=nextDue(i,d);if(x>i.end)return d;d=x}return d}
+const isLast=i=>{const L=lastDue(i);return!!L&&L===i.due};
+function payLeft(i){const L=lastDue(i);if(!L)return 0;let d=i.due,n=1;while(d<L&&n<5000){d=nextDue(i,d);n++}return n}
+/* how many payments of this item fall within the next `lim` days (overdue ones included) */
+function occ(i,lim){if(i.fin||days(i.due)>lim)return 0;if(!isRep(i))return 1;let d=i.due,n=0;
+ for(let k=0;k<1500&&days(d)<=lim&&!(i.end&&d>i.end);k++){n++;d=nextDue(i,d)}return n}
+/* Autopay: once a due date has passed it was paid automatically, so move it on (or complete it if that was the last one) */
+function autoRoll(){let n=0;for(const i of S.items){if(!i.auto||i.fin||days(i.due)>=0)continue;n++;
+  if(!isRep(i)){i.last=i.due;i.fin=i.due;continue}
+  let d=i.due;while(days(d)<0){i.last=d;const x=nextDue(i,d);if(i.end&&x>i.end){i.fin=d;break}d=x}if(!i.fin)i.due=d}
+ return n}
 const remLabel=d=>d===0?'On the Day':d===1?'1 Day Before':d<14||d%7?d+' Days Before':d===14?'2 Weeks Before':d<60?Math.round(d/30)+' Month Before':Math.round(d/30)+' Months Before';
 const rel=n=>n===0?'Today':n===1?'Tomorrow':n<0?Math.abs(n)+(n===-1?' day':' days')+' overdue':n<60?'in '+n+' days':n<730?'in '+Math.round(n/30.4)+' months':'in '+(n/365.25).toFixed(1).replace('.0','')+' years';
 const ORDER=['Overdue','Next 30 Days','Within 3 Months','Later This Year','Years Ahead'];
 const grp=n=>n<0?ORDER[0]:n<=30?ORDER[1]:n<=90?ORDER[2]:n<=365?ORDER[3]:ORDER[4];
 
 /* ---------- render ---------- */
+let showDone=false;
+const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
 function render(){
- const it=[...S.items].sort((a,b)=>a.due<b.due?-1:1);
+ const act=S.items.filter(i=>!i.fin),done=S.items.filter(i=>i.fin).sort((a,b)=>a.fin<b.fin?1:-1);
+ const it=[...act].sort((a,b)=>a.due<b.due?-1:1);
  const nx=it.find(i=>days(i.due)>=0)||it[0];
- if(nx){const n=days(nx.due);$('next').innerHTML=`<div><div class="k">${n<0?'Overdue':'Next Up'}</div><div class="n">${esc(nx.name)}</div></div><div class="d">${n<0?Math.abs(n)+'<small> days late</small>':n===0?'Today':n+'<small> day'+(n===1?'':'s')+'</small>'}</div><div class="m"><b>${esc(fmt(nx.amt))}</b> · ${longD(nx.due)}${nx.auto?' · Autopay':''}</div>`}
- else $('next').innerHTML=`<div><div class="k">Next Up</div><div class="n">Nothing Yet</div></div><div class="m">Add your first payment and the countdown starts here.</div>`;
- const in30=it.filter(i=>days(i.due)<=30).reduce((s,i)=>s+(+i.amt||0),0),yr=it.reduce((s,i)=>s+(i.every>0?i.amt*12/i.every:0),0);
- $('stats').innerHTML=`<div><b>${esc(fmt(in30))}</b><span class="fn">Due in 30 days</span></div><div><b>${esc(fmt(yr))}</b><span class="fn">Per year</span></div><div><b>${it.filter(i=>days(i.due)>180).length}</b><span class="fn">Over 6 months away</span></div>`;
- const cats=['All',...CATS.filter(c=>S.items.some(i=>i.cat===c))];if(!cats.includes(filter))filter='All';
- $('filters').innerHTML=S.items.length>2?cats.map(c=>`<button class="chip" aria-pressed="${c===filter}" data-f="${esc(c)}">${esc(c)}</button>`).join(''):'';
+ if(nx){const n=days(nx.due);$('next').innerHTML=`<div><div class="k">${n<0?'Overdue':'Next Up'}${isLast(nx)?' · Last Payment':''}</div><div class="n">${esc(nx.name)}</div></div><div class="d">${n<0?Math.abs(n)+'<small> days late</small>':n===0?'Today':n+'<small> day'+(n===1?'':'s')+'</small>'}</div><div class="m"><b>${esc(fmt(nx.amt))}</b> · ${longD(nx.due)}${nx.auto?' · Autopay':''}</div>`}
+ else $('next').innerHTML=`<div><div class="k">Next Up</div><div class="n">${done.length?'All Paid':'Nothing Yet'}</div></div><div class="m">${done.length?'Nothing coming up. Add a payment any time.':'Add your first payment and the countdown starts here.'}</div>`;
+ const in30=it.reduce((s,i)=>s+(+i.amt||0)*occ(i,30),0),yr=it.reduce((s,i)=>s+(+i.amt||0)*occ(i,365),0);
+ $('stats').innerHTML=`<div><b>${esc(fmt(in30))}</b><span class="fn">Due in 30 days</span></div><div><b>${esc(fmt(yr))}</b><span class="fn">Next 12 months</span></div><div><b>${it.filter(i=>days(i.due)>180).length}</b><span class="fn">Over 6 months away</span></div>`;
+ const cats=['All',...CATS.filter(c=>act.some(i=>i.cat===c))];if(!cats.includes(filter))filter='All';
+ $('filters').innerHTML=act.length>2?cats.map(c=>`<button class="chip" aria-pressed="${c===filter}" data-f="${esc(c)}">${esc(c)}</button>`).join(''):'';
  const shown=it.filter(i=>filter==='All'||i.cat===filter);
- $('hint').classList.toggle('hidden',!S.items.length);
- $('list').innerHTML=!S.items.length?`<div class="card empty" style="margin-top:22px"><h2 class="t3">No Payments Yet</h2><p class="sub">Add rent, insurance premiums, renewals — anything that comes due.</p><div class="ebtns"><button class="btn pri" data-add>Add Payment</button>${mode==='local'?'<button class="btn sec" data-samples>Show Examples</button>':''}</div></div>`:
+ $('hint').classList.toggle('hidden',!act.length);
+ $('list').innerHTML=(!act.length?`<div class="card empty" style="margin-top:22px"><h2 class="t3">${done.length?'No Upcoming Payments':'No Payments Yet'}</h2><p class="sub">${done.length?'Everything is paid. Add a new payment whenever one comes up.':'Add rent, insurance premiums, renewals — anything that comes due.'}</p><div class="ebtns"><button class="btn pri" data-add>Add Payment</button>${mode==='local'?'<button class="btn sec" data-samples>Show Examples</button>':''}</div></div>`:
   ORDER.map(g=>{const rows=shown.filter(i=>grp(days(i.due))===g);if(!rows.length)return'';
   return `<section class="sec"><h2><span class="t3">${g}</span><span class="sub">${esc(fmt(rows.reduce((s,i)=>s+(+i.amt||0),0)))}</span></h2><div class="list">${rows.map(i=>{const n=days(i.due),cls=n<0?'over':n<=i.remind?'soon':'';
-  return `<div class="row ${cls}" data-id="${esc(i.id)}"><div class="acts" aria-hidden="true"><button class="pd" tabindex="-1" data-act="paid">${i.every?'Paid':'Done'}</button><button class="dl" tabindex="-1" data-act="del">Delete</button></div>
-  <div class="rc" tabindex="0" role="button" aria-label="${esc(i.name)}, ${esc(fmt(i.amt))}, due ${longD(i.due)}, ${rel(n)}. Edit."><button class="tick" data-tick aria-label="Mark ${esc(i.name)} ${i.every?'Paid':'Done'}"><span>${CHECK}</span></button>
-  <div><div class="ti">${esc(i.name)}${i.auto?'<span class="tag">Autopay</span>':''}</div><div class="sub">${evLabel(i.every)} · ${esc(i.cat)}${i.notes?' · '+esc(i.notes):''}</div></div>
-  <div class="tr"><div class="a">${esc(fmt(i.amt))}</div><div class="sub">${n<0?'<span>'+rel(n)+'</span>':n<=i.remind?'<b>'+rel(n)+'</b>':longD(i.due)}</div></div></div></div>`}).join('')}</div></section>`}).join('');
+  return `<div class="row ${cls}" data-id="${esc(i.id)}"><div class="acts" aria-hidden="true"><button class="pd" tabindex="-1" data-act="paid">${isRep(i)?'Paid':'Done'}</button><button class="dl" tabindex="-1" data-act="del">Delete</button></div>
+  <div class="rc" tabindex="0" role="button" aria-label="${esc(i.name)}, ${esc(fmt(i.amt))}, due ${longD(i.due)}, ${rel(n)}${isLast(i)?', last payment':''}. Edit."><button class="tick" data-tick aria-label="Mark ${esc(i.name)} ${isRep(i)?'Paid':'Done'}"><span>${CHECK}</span></button>
+  <div><div class="ti">${esc(i.name)}${isLast(i)?'<span class="tag last">Last Payment</span>':''}${i.auto?'<span class="tag">Autopay</span>':''}</div><div class="sub">${evLabel(i)}${i.end&&!isLast(i)?' · '+payLeft(i)+' left':''} · ${esc(i.cat)}${i.notes?' · '+esc(i.notes):''}</div></div>
+  <div class="tr"><div class="a">${esc(fmt(i.amt))}</div><div class="sub">${n<0?'<span>'+rel(n)+'</span>':n<=i.remind?'<b>'+rel(n)+'</b>':longD(i.due)}</div></div></div></div>`}).join('')}</div></section>`}).join(''))+
+ (done.length?`<section class="sec"><h2><button class="disc" data-done aria-expanded="${showDone}"><span class="t3">Completed</span><span class="sub">${done.length}${CHEV}</span></button></h2>${showDone?`<div class="list">${done.map(i=>`<div class="row fin" data-id="${esc(i.id)}"><div class="acts" aria-hidden="true"><button class="dl" tabindex="-1" data-act="del">Delete</button></div>
+  <div class="rc" tabindex="0" role="button" aria-label="${esc(i.name)}, completed ${longD(i.fin)}. Edit."><span class="tick done" aria-hidden="true"><span>${CHECK}</span></span>
+  <div><div class="ti">${esc(i.name)}</div><div class="sub">${isRep(i)?evLabel(i)+' · ':''}${esc(i.cat)}</div></div>
+  <div class="tr"><div class="a">${esc(fmt(i.amt))}</div><div class="sub">Done ${longD(i.fin)}</div></div></div></div>`).join('')}</div>`:''}</section>`:'');
  draw();status();
 }
 const svg=$('svg');
@@ -94,7 +119,7 @@ function draw(){const W=svg.clientWidth,H=svg.clientHeight;if(!W)return;const na
   o+=`<rect x="${x-.5}" y="${base-12}" width="1.5" height="13" fill="currentColor"/>`;
   if(placed.some(([a,b])=>L<b+8&&L+w>a-8))return;placed.push([L,L+w]);/* labels go in priority order and skip any that would overlap */
   o+=`<text x="${x}" y="${base+19}" font-size="12" text-anchor="${an}" fill="currentColor" opacity=".7">${l}</text>`});
- const it=[...S.items].sort((a,b)=>a.due<b.due?-1:1),nx=it.find(i=>days(i.due)>=0),rows=[],boxes=[],leads=[];let lbl='',txt='';
+ const it=S.items.filter(i=>!i.fin).sort((a,b)=>a.due<b.due?-1:1),nx=it.find(i=>days(i.due)>=0),rows=[],boxes=[],leads=[];let lbl='',txt='';
  let top='';
  it.forEach(i=>{const n=Math.max(0,days(i.due)),x=xOf(n,W),isN=i===nx,r=Math.max(4,Math.min(11,Math.sqrt((+i.amt||0)/120)));
   const cir=`<circle cx="${x}" cy="${base-r-3}" r="${r}" fill="${isN?'#FFE600':'currentColor'}" stroke="${isN?'#111':'none'}" stroke-width="1.5" opacity="${isN?1:.85}"><title>${esc(i.name)} — ${esc(fmt(i.amt))}, ${longD(i.due)}</title></circle>`;if(isN)top=cir;else o+=cir;
@@ -155,13 +180,25 @@ async function driveSave(){const body=JSON.stringify({...S,dirty:false});
 
 /* ---------- Google Calendar sync ---------- */
 const CAL='https://www.googleapis.com/calendar/v3';
-const rrule=i=>i.every?[(i.every%12===0?`RRULE:FREQ=YEARLY;INTERVAL=${i.every/12}`:`RRULE:FREQ=MONTHLY;INTERVAL=${i.every}`)]:undefined;
-function evBody(i,head){const date=head?addD(i.due,-i.remind):i.due,t=(CFG.reminderTime||'09:00');
+/* until: last date the series may fall on (inclusive); allDay: for .ics date-only events */
+const rrule=(i,until,allDay)=>{if(!isRep(i))return undefined;
+ let r=i.wk?`RRULE:FREQ=WEEKLY;INTERVAL=${i.wk}`:i.every%12===0?`RRULE:FREQ=YEARLY;INTERVAL=${i.every/12}`:`RRULE:FREQ=MONTHLY;INTERVAL=${i.every}`;
+ if(until)r+=';UNTIL='+until.replace(/-/g,'')+(allDay?'':'T235959Z');return[r]};
+const days1=n=>n+' day'+(n===1?'':'s');
+/* one calendar event; last=true makes a one-off event that calls out the final payment */
+function evBody(i,head,until,last){const date=head?addD(i.due,-i.remind):i.due,t=(CFG.reminderTime||'09:00'),L=lastDue(i);
  const [hh,mm]=t.split(':').map(Number),endT=String(hh).padStart(2,'0')+':'+String(Math.min(59,mm+15)).padStart(2,'0');
- return {summary:head?`Heads-up: ${i.name} due in ${i.remind} day${i.remind===1?'':'s'} (${fmt(i.amt)})`:`Pay: ${i.name} (${fmt(i.amt)})`,
-  description:`${i.cat} · ${evLabel(i.every)}${i.auto?' · autopay':''}${i.notes?'\n'+i.notes:''}\n\nFrom Payments Ahead. Edit in the app, not here.`,
+ return {summary:last?(head?`Heads-up: last ${i.name} payment due in ${days1(i.remind)} (${fmt(i.amt)})`:`Last payment: ${i.name} (${fmt(i.amt)})`)
+   :(head?`Heads-up: ${i.name} due in ${days1(i.remind)} (${fmt(i.amt)})`:`Pay: ${i.name} (${fmt(i.amt)})`),
+  description:`${i.cat} · ${evLabel(i)}${i.auto?' · autopay':''}${L?' · last payment '+longD(L):''}${i.notes?'\n'+i.notes:''}\n\nFrom Payments Ahead. Edit in the app, not here.`,
   start:{dateTime:`${date}T${t}:00`,timeZone:TZ},end:{dateTime:`${date}T${endT}:00`,timeZone:TZ},
-  recurrence:rrule(i),reminders:{useDefault:false,overrides:[{method:'popup',minutes:0}]},transparency:'transparent',colorId:head?'5':'11'}}
+  recurrence:last?undefined:rrule(i,until),reminders:{useDefault:false,overrides:[{method:'popup',minutes:0}]},transparency:'transparent',colorId:last?'6':head?'5':'11'}}
+/* the events one payment needs: m = pay series, h = heads-up series, l / lh = the final payment and its heads-up */
+function calEvents(i){const L=lastDue(i),hd=i.remind>0;
+ if(!L)return{m:evBody(i,false),h:hd?evBody(i,true):null,l:null,lh:null};
+ const more=i.due<L,fin={...i,due:L};
+ return{m:more?evBody(i,false,addD(L,-1)):null,h:hd&&more?evBody(i,true,addD(L,-i.remind-1)):null,l:evBody(fin,false,null,true),lh:hd?evBody(fin,true,null,true):null}}
+const EVK=['m','h','l','lh'];
 async function calEnsure(){
  if(S.cal&&S.cal.id){try{await api(`${CAL}/calendars/${encodeURIComponent(S.cal.id)}`);return}catch(e){if(e.expired)throw e;if(e.status!==404&&e.status!==410)throw e;S.cal.ev={}}}
  const c=await api(`${CAL}/calendars`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({summary:'Payments',description:'Bills, premiums and renewals from Payments Ahead',timeZone:TZ})});
@@ -173,22 +210,23 @@ async function del(id){try{await api(`${CAL}/calendars/${encodeURIComponent(S.ca
 async function calSync(){if(!S.cal||!S.cal.on||mode!=='google')return;
  if(calBusy){calAgain=true;return}/* a change arrived mid-sync: run again when this one ends, so it isn't dropped */
  calBusy=true;calAgain=false;calPending=false;$('calStat').innerHTML='<span class="spin" style="width:12px;height:12px;border-width:2px;margin-right:6px"></span>Updating Google Calendar…';
- try{await calEnsure();const ev=S.cal.ev||(S.cal.ev={}),ids=new Set(S.items.map(i=>i.id));
-  for(const k of Object.keys(ev))if(!ids.has(k)){if(ev[k].m)await del(ev[k].m);if(ev[k].h)await del(ev[k].h);delete ev[k]}
-  for(const i of S.items){const sig=JSON.stringify([i.name,i.amt,i.every,i.due,i.remind,i.auto,i.notes,i.cat,S.cur]),e=ev[i.id]||{};
-   if(e.sig===sig&&e.m)continue;
-   e.m=await upsert(e.m,evBody(i,false));
-   if(i.remind>0)e.h=await upsert(e.h,evBody(i,true));else if(e.h){await del(e.h);delete e.h}
+ try{await calEnsure();const ev=S.cal.ev||(S.cal.ev={}),act=S.items.filter(i=>!i.fin),ids=new Set(act.map(i=>i.id));
+  /* deleted and completed payments: remove their events */
+  for(const k of Object.keys(ev))if(!ids.has(k)){for(const t of EVK)if(ev[k][t])await del(ev[k][t]);delete ev[k]}
+  for(const i of act){const sig=JSON.stringify([i.name,i.amt,i.every,i.wk||0,i.due,i.end||'',i.remind,i.auto,i.notes,i.cat,S.cur,CFG.reminderTime||'']),e=ev[i.id]||{};
+   if(e.sig===sig)continue;
+   const want=calEvents(i);
+   for(const t of EVK){if(want[t])e[t]=await upsert(e[t],want[t]);else if(e[t]){await del(e[t]);delete e[t]}}
    e.sig=sig;ev[i.id]=e}
   calBusy=false;await persist(true);status()}
  catch(e){calBusy=false;$('calStat').innerHTML='<span class="dot err"></span>Calendar not updated'+(e.expired?'. Reconnect to retry.':'. It will retry on your next change.');console.warn(e)}
  finally{calBusy=false;if(calAgain&&mode==='google'){calAgain=false;calSync()}}}
 
 /* "Add to Google Calendar" link: opens Google Calendar with the event filled in (repeats included). Needs no sign-in in this app. */
-function gcalUrl(i,head){const b=evBody(i,head),f=s=>s.replace(/[-:]/g,'').slice(0,15);
+function gcalUrl(i,head){const L=lastDue(i),until=L?(head?addD(L,-i.remind):L):null,b=evBody(i,head,until),f=s=>s.replace(/[-:]/g,'').slice(0,15);
  const p=new URLSearchParams({action:'TEMPLATE',text:b.summary,dates:f(b.start.dateTime)+'/'+f(b.end.dateTime),ctz:TZ,
-  details:`${i.cat} · ${evLabel(i.every)}${i.auto?' · autopay':''}${i.notes?'\n'+i.notes:''}\n\nAdded from Payments Ahead.`});
- if(i.every)p.set('recur',rrule(i)[0]);return 'https://calendar.google.com/calendar/render?'+p}
+  details:`${i.cat} · ${evLabel(i)}${i.auto?' · autopay':''}${L?' · last payment '+longD(L):''}${i.notes?'\n'+i.notes:''}\n\nAdded from Payments Ahead.`});
+ if(isRep(i))p.set('recur',rrule(i,until)[0]);return 'https://calendar.google.com/calendar/render?'+p}
 
 /* ---------- save pipeline ---------- */
 let saveT=null;
@@ -221,7 +259,11 @@ function setSigninLabel(){let h=null;try{h=localStorage.getItem('pa:hint')}catch
 setSigninLabel();
 function showApp(){$('gate').classList.add('hidden');$('app').classList.remove('hidden');
  $('who').textContent=mode==='google'?'':'This Device';$('acct').textContent=mode==='google'?user.email:'On This Device (No Account)';
- $('signout').textContent=mode==='google'?'Sign Out':'Sign In with Google…';render();scrollTo(0,0)}
+ $('signout').textContent=mode==='google'?'Sign Out':'Sign In with Google…';render();scrollTo(0,0);rollNow()}
+function rollNow(){const n=autoRoll();if(n)commit(`Autopay: ${n} payment${n===1?'':'s'} moved to the next due date`,false)}
+/* coming back to the app (maybe on a new day): roll autopay on, and refresh "in 3 days" style dates */
+let seenDay=iso(today());document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible'||!mode)return;
+ if(iso(today())!==seenDay){seenDay=iso(today());render();rollNow()}});
 $('signin').onclick=()=>{let h=null;try{h=localStorage.getItem('pa:hint')}catch(e){}startGoogle(h)};
 $('localBtn').onclick=()=>{mode='local';S=cacheLoad()||{v:1,cur:'INR',items:[],t:Date.now()};showApp();
  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().catch(()=>{})}catch(e){}};/* ask the browser not to evict this data */
@@ -253,7 +295,9 @@ $('w_keep').onclick=()=>{$('wipeConfirm').classList.add('hidden');$('wipeBtn').f
 $('w_go').onclick=wipeAll;
 $('reauthBtn').onclick=async()=>{try{await getToken(SCOPE_BASE+(S.cal&&S.cal.on?' '+SCOPE_CAL:''),user&&user.email);$('reauth').classList.add('hidden');persist(true);calSync()}catch(e){toast('Reconnect was cancelled',false)}};
 function demoItems(){const t=iso(today());return [
- {id:'d1',name:'Rent',cat:'Home',amt:15000,every:1,due:addD(t,5),remind:3,auto:false,notes:''},
+ {id:'d1',name:'Room Rent',cat:'Home',amt:15000,every:1,due:addD(t,5),end:addM(addD(t,5),10),endBy:'count',remind:3,auto:false,notes:''},
+ {id:'d7',name:'Course Fees',cat:'Fees',amt:4000,every:1,due:addD(t,20),end:addD(t,20),endBy:'count',remind:3,auto:false,notes:'Final instalment'},
+ {id:'d8',name:'Tuition',cat:'Fees',amt:800,wk:1,every:0,due:addD(t,3),remind:1,auto:false,notes:''},
  {id:'d2',name:'Electricity',cat:'Utility',amt:1150,every:1,due:addD(t,14),remind:3,auto:false,notes:''},
  {id:'d3',name:'Mobile Recharge',cat:'Phone',amt:350,every:1,due:addD(t,2),remind:2,auto:true,notes:''},
  {id:'d4',name:'Health Insurance',cat:'Insurance',amt:18000,every:12,due:addM(t,4),remind:30,auto:false,notes:''},
@@ -270,13 +314,16 @@ $('undo').onclick=()=>{const s=undoStack.pop();if(!s)return;S.items=JSON.parse(s
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!openSheetEl&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){e.preventDefault();$('undo').click()}});
 
 /* ---------- list actions ---------- */
-function markPaid(id){const i=S.items.find(x=>x.id===id);if(!i)return;snap();haptic();
- if(i.every){i.last=iso(today());let d=addM(i.due,i.every);while(days(d)<0)d=addM(d,i.every);i.due=d;commit(`${i.name} paid. Next due ${longD(i.due)}.`)}
- else{S.items=S.items.filter(x=>x!==i);commit(`${i.name} done`)}}
+function markPaid(id){const i=S.items.find(x=>x.id===id);if(!i)return;if(i.fin)return delItem(id);snap();haptic();i.last=iso(today());
+ if(isRep(i)){let d=nextDue(i,i.due);while(days(d)<0&&!(i.end&&d>i.end))d=nextDue(i,d);
+  if(i.end&&d>i.end){i.fin=iso(today());commit(`${i.name}: last payment done. Moved to Completed.`)}
+  else{i.due=d;commit(`${i.name} paid. Next due ${longD(d)}${isLast(i)?' — the last payment':''}.`)}}
+ else{i.fin=iso(today());commit(`${i.name} done. Moved to Completed.`)}}
 function delItem(id){const i=S.items.find(x=>x.id===id);if(!i)return;snap();S.items=S.items.filter(x=>x!==i);commit(`${i.name} deleted`)}
 $('filters').onclick=e=>{const b=e.target.closest('[data-f]');if(b){filter=b.dataset.f;render()}};
 $('list').addEventListener('click',e=>{
  if(e.target.closest('[data-add]'))return openForm(null);
+ if(e.target.closest('[data-done]')){showDone=!showDone;return render()}
  if(e.target.closest('[data-samples]')){snap();S.items=demoItems();return commit('Examples added. Delete them when you\'re ready to add your own.')}
  const tk=e.target.closest('[data-tick]');if(tk){const id=tk.closest('.row').dataset.id;tk.classList.add('done');setTimeout(()=>markPaid(id),RM.matches?0:260);return}
  const a=e.target.closest('[data-act]');if(a){const id=a.closest('.row').dataset.id;a.dataset.act==='paid'?markPaid(id):delItem(id);return}
@@ -290,16 +337,17 @@ function settle(rc,to,v=0){rc._a&&rc._a.stop();rc._a=spring(rc._x||0,to,{damping
 function closeRow(rc){settle(rc,0)}
 $('list').addEventListener('pointerdown',e=>{const rc=e.target.closest('.rc');if(!rc||e.button>0)return;
  if(openRow&&openRow!==rc)closeRow(openRow);
+ const AW=rc.closest('.row').classList.contains('fin')?84:ACTW;/* completed rows only have Delete */
  const sx=e.clientX,sy=e.clientY,x0=(rc._a&&rc._a.stop(),rc._x||0),tr=tracker();let dir=null,hl=setTimeout(()=>rc.classList.add('hl'),60);delete rc.dataset.swiped;
  const move=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;
   if(!dir){if(Math.abs(dx)<10&&Math.abs(dy)<10)return;dir=Math.abs(dx)>Math.abs(dy)?'x':'y';clearTimeout(hl);rc.classList.remove('hl');if(dir==='x'){try{rc.setPointerCapture(e.pointerId)}catch(_){}}}
   if(dir!=='x')return;ev.preventDefault();rc.dataset.swiped='1';
-  let x=x0+dx;if(x>0)x=rubber(x,rc.offsetWidth);if(x<-ACTW*1.9)x=-ACTW*1.9-rubber(-(x+ACTW*1.9),rc.offsetWidth);
+  let x=x0+dx;if(x>0)x=rubber(x,rc.offsetWidth);if(x<-AW*1.9)x=-AW*1.9-rubber(-(x+AW*1.9),rc.offsetWidth);
   setX(rc,x);tr.add(x)};
  const up=()=>{clearTimeout(hl);rc.classList.remove('hl');removeEventListener('pointermove',move);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
   if(dir!=='x')return;const v=tr.v(),proj=(rc._x||0)+project(v,.99);
   if(proj<-rc.offsetWidth*.62){haptic();settle(rc,-rc.offsetWidth,v);setTimeout(()=>markPaid(rc.closest('.row').dataset.id),RM.matches?0:180)}
-  else settle(rc,proj<-ACTW/2?-ACTW:0,v);
+  else settle(rc,proj<-AW/2?-AW:0,v);
   setTimeout(()=>delete rc.dataset.swiped,0)};
  addEventListener('pointermove',move,{passive:false});addEventListener('pointerup',up);addEventListener('pointercancel',up)});
 
@@ -345,37 +393,57 @@ $('f_months').innerHTML=[2,4,5,7,8,9,10,11,18].map(m=>`<option value="${m}">${m}
 $('f_rem').innerHTML=REMS.map(d=>`<option value="${d}">${remLabel(d)}</option>`).join('');
 $('presets').innerHTML=PRESETS.map((p,k)=>`<button type="button" class="chip" data-pr="${k}">${esc(p[0])}</button>`).join('');
 const nearestRem=d=>REMS.reduce((a,b)=>Math.abs(b-d)<Math.abs(a-d)?b:a,REMS[0]);
-function setEvery(v){const std=EVERY.some(e=>e[0]===v&&v>=0);const yrs=v%12===0&&v>=24;
+function setEvery(v,wk){if(wk>0){const val=-7*wk;if(![...$('f_every').options].some(o=>+o.value===val))$('f_every').insertAdjacentHTML('beforeend',`<option value="${val}">Every ${wk} Weeks</option>`);$('f_every').value=val;return syncEvery()}
+ const std=EVERY.some(e=>e[0]===v&&v>=0);const yrs=v%12===0&&v>=24;
  $('f_every').value=std?v:(yrs?-1:-2);
  if(yrs){if(![...$('f_years').options].some(o=>+o.value===v/12))$('f_years').insertAdjacentHTML('beforeend',`<option value="${v/12}">${v/12} Years</option>`);$('f_years').value=v/12}
  if(!std&&!yrs){if(![...$('f_months').options].some(o=>+o.value===v))$('f_months').insertAdjacentHTML('beforeend',`<option value="${v}">${v} Months</option>`);$('f_months').value=v}
  syncEvery()}
-function syncEvery(){const ev=$('f_every').value;$('f_nw').classList.toggle('hidden',ev!=='-1');$('f_nm').classList.toggle('hidden',ev!=='-2')}
-$('f_every').onchange=()=>{syncEvery();if(!editing){const v=+$('f_every').value;$('f_rem').value=v===1?3:v===-1?90:v===0?7:v>=12?30:7}};
+function syncEvery(){const ev=$('f_every').value;$('f_nw').classList.toggle('hidden',ev!=='-1');$('f_nm').classList.toggle('hidden',ev!=='-2');syncEnd()}
+$('f_every').onchange=()=>{syncEvery();if(!editing){const v=+$('f_every').value;$('f_rem').value=v<=-7?1:v===1?3:v===-1?90:v===0?7:v>=12?30:7}};
+/* the payment as the form describes it right now */
+function formRec(){const ev=+$('f_every').value,due=$('f_due').value;
+ const every=ev===-1?(+$('f_years').value)*12:ev===-2?+$('f_months').value:ev>0?ev:0,wk=ev<=-7?-ev/7:0,m=(every||wk)?$('f_endm').value:'never';
+ let end;if(m==='date')end=$('f_endd').value||'';
+ else if(m==='count'&&DATE_RE.test(due)){const c=Math.min(600,Math.max(1,Math.round(+$('f_endc').value||1)));end=due;for(let k=1;k<c;k++)end=nextDue({every,wk},end)}
+ return{name:$('f_name').value.trim(),cat:$('f_cat').value,amt:+$('f_amt').value||0,every,wk,due,end,endBy:end?m:undefined,remind:+$('f_rem').value||0,auto:$('f_auto').checked,notes:$('f_notes').value.trim()}}
+function syncEnd(){const rep=$('f_every').value!=='0',m=$('f_endm').value;
+ $('f_endr').classList.toggle('hidden',!rep);$('f_endd_r').classList.toggle('hidden',!rep||m!=='date');$('f_endc_r').classList.toggle('hidden',!rep||m!=='count');
+ const r=formRec(),L=r.end&&DATE_RE.test(r.end)&&r.end>=r.due?lastDue(r):null;
+ $('f_endinfo').textContent=L?(L===r.due?'This is the last payment.':`${payLeft(r)} payments left. The last one is due ${longD(L)}.`):'';$('f_endinfo').classList.toggle('hidden',!L)}
+['f_endm','f_endd','f_endc','f_due','f_years','f_months'].forEach(k=>$(k).addEventListener('input',syncEnd));$('f_endm').onchange=syncEnd;
 $('presets').onclick=e=>{const b=e.target.closest('[data-pr]');if(!b)return;const[p,c,ev,r]=PRESETS[+b.dataset.pr];
  $('f_name').value=p;$('f_cat').value=c;setEvery(ev);$('f_rem').value=r;$('f_amt').focus()};
-let formSnap='';const formVal=()=>JSON.stringify(['f_name','f_amt','f_due','f_every','f_years','f_months','f_rem','f_cat','f_notes'].map(k=>$(k).value).concat($('f_auto').checked));
+let formSnap='';const formVal=()=>JSON.stringify(['f_name','f_amt','f_due','f_every','f_years','f_months','f_endm','f_endd','f_endc','f_rem','f_cat','f_notes'].map(k=>$(k).value).concat($('f_auto').checked));
 const dirty=()=>formVal()!==formSnap;
 function openForm(i,from){editing=i||null;$('ft').textContent=i?'Edit Payment':'New Payment';$('f_save').textContent=i?'Save':'Add';$('presets').classList.toggle('hidden',!!i);
  $('f_cur').textContent=sym();$('f_err').textContent='';
- $('f_name').value=i?i.name:'';$('f_cat').value=i?i.cat:'Insurance';$('f_amt').value=i?i.amt:'';setEvery(i?i.every:12);
- $('f_due').value=i?i.due:iso(today());$('f_rem').value=nearestRem(i?i.remind:30);
+ $('f_name').value=i?i.name:'';$('f_cat').value=i?i.cat:'Insurance';$('f_amt').value=i?i.amt:'';
+ $('f_due').value=i?i.due:iso(today());
+ $('f_endm').value=i&&i.end?(i.endBy==='count'?'count':'date'):'never';$('f_endd').value=i&&i.end?i.end:'';$('f_endc').value=i&&i.end?payLeft(i):12;
+ setEvery(i?i.every:12,i?i.wk:0);
+ $('f_finnote').textContent=i&&i.fin?`Completed ${longD(i.fin)}. Save a change here to bring it back to your upcoming payments.`:'';$('f_finnote').classList.toggle('hidden',!(i&&i.fin));
+ $('f_lastpaid').textContent=i&&i.last?`Last paid ${longD(i.last)}.`:'';$('f_lastpaid').classList.toggle('hidden',!(i&&i.last));$('f_rem').value=nearestRem(i?i.remind:30);
  if(i&&!REMS.includes(i.remind)){$('f_rem').insertAdjacentHTML('beforeend',`<option value="${i.remind}">${remLabel(i.remind)}</option>`);$('f_rem').value=i.remind}
- $('f_auto').checked=!!(i&&i.auto);$('f_notes').value=i?i.notes:'';$('f_delg').classList.toggle('hidden',!i);
- const showG=!!i&&!(mode==='google'&&S.cal&&S.cal.on);$('f_gcal').classList.toggle('hidden',!showG);
+ $('f_auto').checked=!!(i&&i.auto);$('f_autoinfo').classList.toggle('hidden',!(i&&i.auto));$('f_notes').value=i?i.notes:'';$('f_delg').classList.toggle('hidden',!i);
+ const showG=!!i&&!i.fin&&!(mode==='google'&&S.cal&&S.cal.on);$('f_gcal').classList.toggle('hidden',!showG);
  if(showG){$('f_gc_due').href=gcalUrl(i,false);$('f_gc_head').href=gcalUrl(i,true);$('f_gc_head').textContent='Add Heads-Up, '+remLabel(i.remind);$('f_gc_head').parentNode.classList.toggle('hidden',!(i.remind>0))}
  formSnap=formVal();$('sheet').querySelector('.sbody').scrollTop=0;openSheet($('sheet'),from);if(!i)setTimeout(()=>$('f_name').focus({preventScroll:true}),desk()?80:400)}
 $('add').onclick=e=>openForm(null,e.currentTarget);
 $('f_x').onclick=()=>closeSheet();
 $('c_discard').onclick=()=>closeSheet(true);
 $('c_keep').onclick=()=>{$('confirm').classList.add('hidden');$('f_name').focus()};
-function save(){const ev=+$('f_every').value,err=$('f_err');
- const every=ev===-1?(+$('f_years').value)*12:ev===-2?+$('f_months').value:ev;
- const rec={name:$('f_name').value.trim(),cat:$('f_cat').value,amt:+$('f_amt').value||0,every,due:$('f_due').value,remind:+$('f_rem').value||0,auto:$('f_auto').checked,notes:$('f_notes').value.trim()};
+function save(){const err=$('f_err'),rec=formRec();
+ if(editing&&!dirty())return closeSheet(true);/* nothing changed */
  if(!rec.name){err.textContent='Add a name so you know what to pay.';$('f_name').focus();return}
- if(!/^\d{4}-\d\d-\d\d$/.test(rec.due)){err.textContent='Choose the next due date.';$('f_due').focus();return}
- snap();if(editing)Object.assign(editing,rec);else S.items.push({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),...rec});
+ if(!DATE_RE.test(rec.due)){err.textContent='Choose the next due date.';$('f_due').focus();return}
+ if(rec.endBy==='date'&&!DATE_RE.test(rec.end)){err.textContent='Choose the date the payments end.';$('f_endd').focus();return}
+ if(rec.end&&rec.end<rec.due){err.textContent='The end date is before the next due date.';$('f_endd').focus();return}
+ if(!rec.end){delete rec.end;delete rec.endBy}if(!rec.wk)delete rec.wk;
+ snap();if(editing){for(const k of ['end','endBy','wk','fin'])delete editing[k];Object.assign(editing,rec)}
+ else S.items.push({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),...rec});
  closeSheet(true);commit(editing?`${rec.name} updated`:`${rec.name} added`)}
+$('f_auto').addEventListener('change',()=>$('f_autoinfo').classList.toggle('hidden',!$('f_auto').checked));
 $('f_save').onclick=save;$('f').onsubmit=e=>{e.preventDefault();save()};
 $('f_name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('f_amt').focus()}});
 $('f_del').onclick=()=>{if(!editing)return;const id=editing.id;closeSheet(true);delItem(id)};
@@ -406,10 +474,10 @@ $('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if
  d.items.slice(0,5000).forEach((x,k)=>{const i=cleanItem(x,k);if(!i)return;if(have.has(i.id))i.id='p'+Date.now().toString(36)+k;have.add(i.id);S.items.push(i);n++});
  closeSheet(true);commit(`Imported ${n} payment${n===1?'':'s'}`)}catch(err){toast('That file isn\'t a Payments Ahead export',false)}e.target.value=''};
 function ics(){const c=s=>String(s).replace(/[\\;,]/g,m=>'\\'+m).replace(/\n/g,'\\n'),d8=s=>s.replace(/-/g,''),st=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
- const ev=(i,head)=>{const d=head?addD(i.due,-i.remind):i.due,rr=rrule(i);return ['BEGIN:VEVENT',`UID:${i.id}${head?'-h':''}@payments-ahead`,`DTSTAMP:${st}`,`DTSTART;VALUE=DATE:${d8(d)}`,`DTEND;VALUE=DATE:${d8(addD(d,1))}`,rr?rr[0]:'',
-  `SUMMARY:${c(head?`Heads-up: ${i.name} due in ${i.remind} days (${fmt(i.amt)})`:`Pay: ${i.name} (${fmt(i.amt)})`)}`,`DESCRIPTION:${c(i.cat+' · '+evLabel(i.every)+(i.notes?' · '+i.notes:''))}`,
+ const ev=(i,head)=>{const d=head?addD(i.due,-i.remind):i.due,L=lastDue(i),rr=rrule(i,L?(head?addD(L,-i.remind):L):null,true);return ['BEGIN:VEVENT',`UID:${i.id}${head?'-h':''}@payments-ahead`,`DTSTAMP:${st}`,`DTSTART;VALUE=DATE:${d8(d)}`,`DTEND;VALUE=DATE:${d8(addD(d,1))}`,rr?rr[0]:'',
+  `SUMMARY:${c(head?`Heads-up: ${i.name} due in ${i.remind} days (${fmt(i.amt)})`:`Pay: ${i.name} (${fmt(i.amt)})`)}`,`DESCRIPTION:${c(i.cat+' · '+evLabel(i)+(L?' · last payment '+longD(L):'')+(i.notes?' · '+i.notes:''))}`,
   'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${c(i.name)}`,'TRIGGER:PT9H','END:VALARM','END:VEVENT'].filter(Boolean).join('\r\n')};
- return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Payments Ahead//EN','CALSCALE:GREGORIAN','X-WR-CALNAME:Payments',...S.items.flatMap(i=>i.remind?[ev(i,false),ev(i,true)]:[ev(i,false)]),'END:VCALENDAR'].join('\r\n')+'\r\n'}
+ return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Payments Ahead//EN','CALSCALE:GREGORIAN','X-WR-CALNAME:Payments',...S.items.filter(i=>!i.fin).flatMap(i=>i.remind?[ev(i,false),ev(i,true)]:[ev(i,false)]),'END:VCALENDAR'].join('\r\n')+'\r\n'}
 $('icsBtn').onclick=()=>dlFile('payments.ics',ics(),'text/calendar');
 
 /* ---------- PWA ---------- */

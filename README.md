@@ -4,6 +4,9 @@ A reminder app for monthly bills, yearly insurance premiums, and renewals that o
 
 Live at **https://athul37.github.io/personal-reminder/** once GitHub Pages is switched on (step 2 below).
 
+- **Weekly to once a decade.** Weekly, every 2 weeks, monthly, every few months, yearly, every few years, or one time.
+- **Payments that end.** A lease, a loan or course fees can end **on a date** or **after a number of payments**. The last payment is flagged (*Last Payment* tag, the Next Up card, and its own "Last payment:" event in Google Calendar), and finished payments move to a **Completed** list instead of vanishing.
+- **Autopay.** Payments marked *Paid by Autopay* move to their next due date by themselves once the date passes.
 - **Use it without an account.** Payments are saved in the browser on that device. Nothing is sent anywhere.
 - **Or sign in with Google.** Payments are saved in a private app-data folder in **the user's own Google Drive** (`drive.appdata`). You run no server and hold no one's data.
 - **Google Calendar, three ways:**
@@ -122,6 +125,7 @@ Then open <http://localhost:8000>. For Google sign-in to work there, `http://loc
 - Payments due on the 29th–31st: Google Calendar skips months without that date for monthly repeats. Use the 28th or earlier for monthly bills.
 - Editing a synced "Pay:" event in Google Calendar doesn't change the app. Edit in the app and the calendar follows. Events added with the *Add to Google Calendar* links or the .ics file are one-off copies, so they don't update when the payment changes.
 - Two devices editing at the same moment: the last save wins.
+- Completing a payment removes its events from the synced "Payments" calendar, including past ones. The app keeps it under *Completed*.
 
 ## Design
 

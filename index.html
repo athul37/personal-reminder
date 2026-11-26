@@ -156,6 +156,14 @@ main{max-width:980px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right)
 @media(prefers-color-scheme:dark){.gbtn{background:#131314;color:#E3E3E3;box-shadow:inset 0 0 0 1px #8E918F}}
 /* Phones: the illustration takes only the height it needs, so the sign-in buttons sit higher */
 @media(max-width:760px){.gate .art{aspect-ratio:auto;padding:12px}.gate .art svg{height:auto}}
+/* End dates, last payment, completed */
+.tag.last{background:var(--y);color:#111}
+.disc{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;min-height:44px;margin:-10px 0 -6px;padding:0;text-align:left}
+.disc .sub{display:inline-flex;align-items:center;gap:6px}.disc svg{width:13px;height:13px;transition:transform .2s}.disc[aria-expanded=true] svg{transform:rotate(90deg)}
+.row.fin .ti,.row.fin .tr .a{color:var(--label2)}
+.fnote{margin:0 16px 14px;color:var(--label)}
+.foot+.foot{margin-top:-14px}
+#f_endc{justify-self:end}
 </style></head><body>
 
 <!-- SIGN-IN -->
@@ -164,7 +172,7 @@ main{max-width:980px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right)
   <h1>Payments Ahead</h1>
   <p class="lede">Every bill, premium and renewal, from this month to ten years out.</p>
   <ul class="feat">
-   <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><div><b>Monthly to once a decade</b><div class="sub">Rent, insurance premiums, passport and licence renewals, all on one timeline.</div></div></li>
+   <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><div><b>Weekly to once a decade</b><div class="sub">Rent until your lease ends, insurance premiums, passport and licence renewals, all on one timeline.</div></div></li>
    <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><div><b>Reminders on any phone</b><div class="sub">Alerts come from Google Calendar, on Android and iPhone.</div></div></li>
    <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><div><b>Your data stays yours</b><div class="sub">On this device, or in a private folder in your own Google Drive. No one else's server holds it.</div></div></li>
   </ul>
@@ -216,6 +224,7 @@ main{max-width:980px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right)
  <div class="sbody">
   <div class="presets" id="presets" aria-label="Common payments"></div>
   <form id="f" novalidate>
+   <p class="fn fnote hidden" id="f_finnote"></p>
    <div class="grp">
     <label class="fr full"><input id="f_name" maxlength="120" placeholder="Name, e.g. Health Insurance" autocomplete="off" enterkeyhint="next" aria-label="Name"></label>
     <label class="fr"><span>Amount</span><span class="amtw"><span id="f_cur">₹</span><input id="f_amt" type="number" inputmode="decimal" min="0" step="any" placeholder="0" style="max-width:9em"></span></label>
@@ -225,12 +234,18 @@ main{max-width:980px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right)
     <label class="fr"><span>Repeats</span><select id="f_every"></select></label>
     <label class="fr hidden" id="f_nw"><span>Every</span><select id="f_years"></select></label>
     <label class="fr hidden" id="f_nm"><span>Every</span><select id="f_months"></select></label>
+    <label class="fr" id="f_endr"><span>Ends</span><select id="f_endm"><option value="never">Never</option><option value="date">On a Date</option><option value="count">After a Number of Payments</option></select></label>
+    <label class="fr hidden" id="f_endd_r"><span>End Date</span><input id="f_endd" type="date"></label>
+    <label class="fr hidden" id="f_endc_r"><span>Number of Payments</span><input id="f_endc" type="number" inputmode="numeric" min="1" max="600" step="1" style="max-width:6em"></label>
     <label class="fr"><span>Remind Me</span><select id="f_rem"></select></label>
    </div>
+   <p class="fn foot hidden" id="f_endinfo" aria-live="polite"></p>
    <div class="grp">
     <label class="fr"><span>Category</span><select id="f_cat"></select></label>
     <div class="fr"><span id="f_auto_l">Paid by Autopay</span><span class="sw"><input id="f_auto" type="checkbox" role="switch" aria-labelledby="f_auto_l"><i></i></span></div>
    </div>
+   <p class="fn foot" id="f_autoinfo">Autopay payments move to the next due date by themselves once the date passes.</p>
+   <p class="fn foot hidden" id="f_lastpaid"></p>
    <div class="grp"><label class="fr full"><textarea id="f_notes" rows="2" maxlength="500" placeholder="Notes: policy number, agent's phone" aria-label="Notes"></textarea></label></div>
    <p class="fn foot" id="f_err" role="alert"></p>
    <div class="hidden" id="f_gcal">
