@@ -18,18 +18,9 @@ It's plain HTML/JS with no build step. Every file in this repo is served as-is.
 
 ## Set it up (about 30 minutes, free)
 
-### 1. Fill in your details
+### 1. Your details (done)
 
-Edit these on GitHub (open the file › pencil icon › edit › *Commit changes*):
-
-| File | Replace |
-|---|---|
-| `privacy.html` | `[YOUR EMAIL]` (2 places) |
-| `terms.html` | `[YOUR EMAIL]` (1 place) |
-
-Name and jurisdiction are already filled in (Athul Shaji; India, courts of Payyanur, Kerala).
-
-Use an email address you're happy to show publicly. Google also requires it.
+`privacy.html` and `terms.html` name Athul Shaji as the developer, with contact athulshaji81@gmail.com, Indian law and the courts of Payyanur, Kerala. Use the same email as the support and contact email in Google Cloud (step 3).
 
 ### 2. Publish with GitHub Pages
 
