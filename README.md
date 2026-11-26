@@ -24,8 +24,10 @@ Edit these on GitHub (open the file › pencil icon › edit › *Commit changes
 
 | File | Replace |
 |---|---|
-| `privacy.html` | `[YOUR NAME]`, `[YOUR EMAIL]` |
-| `terms.html` | `[YOUR NAME]`, `[YOUR EMAIL]`, `[YOUR COUNTRY]`, `[YOUR CITY]` |
+| `privacy.html` | `[YOUR EMAIL]` (2 places) |
+| `terms.html` | `[YOUR EMAIL]` (1 place) |
+
+Name and jurisdiction are already filled in (Athul Shaji; India, courts of Payyanur, Kerala).
 
 Use an email address you're happy to show publicly. Google also requires it.
 
