@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- Security: only this site's own scripts and Google's sign-in library may run; data may only be sent to Google's APIs.
+     No inline scripts, no plugins, no <base> hijacking, no form posts. GitHub Pages can't set headers, so this lives in a meta tag. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src 'self' https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Payments Ahead</title>
+<meta name="description" content="Never miss a bill, premium or renewal — from this month to ten years out. Kept on your device or in your own Google Drive.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F2F2F7"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Payments">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="icon-192.png">
+<script src="config.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+/* Tokens — semantic, light/dark. Contrast (WCAG): label2 #6E6E73 on #FFF 5.07:1, on #F2F2F7 4.54:1;
+   tint #0066CC on #FFF 5.57:1 / dark #409CFF on #1C1C1E 6.01:1; red #D70015 5.38:1 / #FF453A 4.99:1;
+   signature yellow #FFE600 with #111 text 14.9:1. */
+:root{color-scheme:light dark;
+ --bg:#F2F2F7;--card:#FFF;--fill:#E9E9EE;--label:#000;--label2:#6E6E73;--sep:#C6C6C8;--tint:#0066CC;--red:#D70015;--green:#248A3D;--y:#FFE600;
+ --bar:rgb(242 242 247/.78);--scrim:rgb(0 0 0/.35);--shadow:0 10px 40px rgb(0 0 0/.18);--swoff:#E9E9EB;--swon:#34C759}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1C1C1E;--fill:#2C2C2E;--label:#F5F5F7;--label2:#AEAEB2;--sep:#38383A;--tint:#409CFF;--red:#FF453A;--green:#30D158;--bar:rgb(0 0 0/.72);--scrim:rgb(0 0 0/.55);--shadow:0 10px 40px rgb(0 0 0/.6);--swoff:#39393D;--swon:#30D158}}
+@media(prefers-contrast:more){:root{--label2:#3A3A3C;--sep:#8E8E93}@media(prefers-color-scheme:dark){:root{--label2:#D1D1D6;--sep:#8E8E93}}}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html{font-size:100%;-webkit-text-size-adjust:100%}
+/* Type: system font (SF on Apple, Roboto on Android); Apple's default scale, rem so it follows the user's text size */
+body{margin:0;background:var(--bg);color:var(--label);font:1.0625rem/1.294 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,Roboto,"Segoe UI",sans-serif;letter-spacing:-.022em;overflow-x:clip}
+.lt{font-size:2.125rem;line-height:1.2;font-weight:700;letter-spacing:.011em;margin:0}          /* Large Title 34/41 */
+.t2{font-size:1.375rem;line-height:1.27;font-weight:700;letter-spacing:-.02em;margin:0}           /* Title 2 22/28 */
+.t3{font-size:1.25rem;line-height:1.25;font-weight:600;letter-spacing:-.022em;margin:0}           /* Title 3 20/25 */
+.sub{font-size:.9375rem;line-height:1.333;color:var(--label2);letter-spacing:-.016em}            /* Subhead 15/20 */
+.fn{font-size:.8125rem;line-height:1.385;color:var(--label2);letter-spacing:-.006em}              /* Footnote 13/18 */
+.hidden{display:none!important}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--tint);outline-offset:2px;border-radius:10px}
+/* Buttons: prominent for the most likely action; instant press state */
+.btn{min-height:50px;padding:0 20px;border-radius:14px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px;transition:transform 100ms ease-out,opacity 100ms}
+.btn:active,.press:active{transform:scale(.97)}
+.btn.pri{background:var(--tint);color:#fff}.btn.sec{background:var(--fill);color:var(--tint)}
+.link{color:var(--tint);min-height:44px;padding:0 4px;font-size:1.0625rem}
+.link.b{font-weight:600}.link:disabled{opacity:.35}
+.icon{width:44px;height:44px;display:inline-grid;place-items:center;border-radius:22px;color:var(--tint)}
+.icon:active{background:var(--fill)}
+.icon svg{width:24px;height:24px}
+/* Navigation bar: floating translucent layer, edge effect only when content scrolls under it */
+.nav{position:sticky;top:0;z-index:4;padding:calc(env(safe-area-inset-top) + 4px) max(env(safe-area-inset-right),8px,calc((100vw - 980px)/2 + 4px)) 4px max(env(safe-area-inset-left),8px,calc((100vw - 980px)/2 + 4px));display:grid;grid-template-columns:1fr auto 1fr;align-items:center;background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);box-shadow:0 .5px 0 transparent;transition:box-shadow .2s}
+.nav.edge{box-shadow:0 .5px 0 var(--sep)}
+.nav .ttl{font-weight:600;opacity:0;transition:opacity .15s}.nav.edge .ttl{opacity:1}
+.nav .r{justify-self:end;display:flex}
+main{max-width:980px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin:2px 4px 14px}
+/* Signature: the yellow "next up" card and the time ruler */
+.hero{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:12px}
+.next{background:var(--y);color:#111;border-radius:22px;padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;min-height:200px}
+.next .k{font-size:.9375rem;font-weight:600}.next .n{font-size:1.75rem;line-height:1.2;font-weight:700;letter-spacing:.012em}
+.next .d{font-size:3.5rem;font-weight:300;line-height:1;letter-spacing:-.02em;white-space:nowrap;font-variant-numeric:tabular-nums}.next .d small{font-size:1.0625rem;font-weight:600;letter-spacing:-.022em}
+.next .m{font-size:.9375rem}
+.card{background:var(--card);border-radius:22px}
+.ruler{padding:12px 10px 4px}
+.fig{position:relative;min-height:220px}.fig>svg{position:absolute;inset:0;width:100%;height:100%;color:var(--label)}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:12px;overflow:hidden}
+.stats div{padding:12px 16px}.stats div+div{box-shadow:-.5px 0 0 var(--sep)}
+.stats b{display:block;font-size:1.375rem;font-weight:600;letter-spacing:-.02em;white-space:nowrap;font-variant-numeric:tabular-nums}
+.status{margin:10px 6px 0;display:flex;gap:6px 16px;flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;vertical-align:1px}.dot.warn{background:#FF9F0A}.dot.err{background:var(--red)}
+.banner{margin-top:12px;padding:12px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:22px -16px 0;padding:0 16px 2px}.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;min-height:36px;padding:0 14px;border-radius:18px;background:var(--card);font-size:.9375rem;font-weight:500;transition:transform 100ms ease-out}
+.chip:active{transform:scale(.96)}.chip[aria-pressed=true]{background:var(--label);color:var(--bg)}
+/* Inset grouped list */
+.sec{margin-top:26px}
+.sec h2{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0 16px 8px}
+.list{background:var(--card);border-radius:14px;overflow:hidden}
+.row{position:relative;overflow:hidden}
+.row+.row .rc::before{content:"";position:absolute;top:0;left:60px;right:0;height:.5px;background:var(--sep)}
+.acts{position:absolute;inset:0;display:flex;justify-content:flex-end;visibility:hidden}.swiping .acts{visibility:visible}
+.acts button{width:84px;color:#fff;font-weight:600;font-size:.9375rem;display:grid;place-items:center;gap:2px}
+.acts .pd{background:var(--green)}.acts .dl{background:var(--red)}
+@media(prefers-color-scheme:dark){.acts .pd{color:#000}}
+.rc{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:10px 16px 10px 8px;background:var(--card);touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:default;will-change:transform}
+.rc.hl{background:var(--fill)}
+.tick{width:44px;height:44px;display:grid;place-items:center;border-radius:22px}
+.tick span{width:24px;height:24px;border-radius:12px;box-shadow:inset 0 0 0 2px var(--sep);display:grid;place-items:center;transition:background .15s,box-shadow .15s}
+.tick svg{width:14px;height:14px;opacity:0;color:#fff}
+.tick.done span{background:var(--green);box-shadow:none}.tick.done svg{opacity:1}
+.ti{font-weight:400}.ti .tag{font-size:.75rem;font-weight:600;padding:1px 7px;border-radius:6px;background:var(--fill);color:var(--label2);margin-left:6px;vertical-align:2px;white-space:nowrap}
+.tr{text-align:right;white-space:nowrap}.tr .a{font-variant-numeric:tabular-nums}
+.over .tr .sub{color:var(--red);font-weight:600}
+.soon .tr .sub b{background:var(--y);color:#111;border-radius:6px;padding:0 6px;font-weight:600}
+.empty{padding:36px 20px;text-align:center}.empty p{margin:6px 0 18px}
+/* Sign-in (delayed: people can try first) */
+.gate{min-height:100svh;display:grid;align-items:center;padding:calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 24px)}
+.gate .in{max-width:980px;margin:0 auto;width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;align-items:center}
+.gate h1{font-size:clamp(2.125rem,6vw,3.25rem);line-height:1.08;letter-spacing:-.025em;font-weight:700;margin:0 0 10px}
+.gate .lede{font-size:1.25rem;line-height:1.3;color:var(--label2);margin:0 0 22px;letter-spacing:-.02em}
+.feat{list-style:none;padding:0;margin:0 0 26px;display:grid;gap:14px}
+.feat li{display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start}
+.feat svg{width:28px;height:28px;color:var(--tint)}
+.gstack{display:grid;gap:10px;max-width:380px}
+.gbtn{min-height:50px;border-radius:14px;background:#fff;color:#1F1F1F;box-shadow:inset 0 0 0 1px #747775;font-family:Roboto,-apple-system,system-ui,sans-serif;font-weight:500;display:flex;align-items:center;justify-content:center;gap:12px;transition:transform 100ms ease-out}
+.gbtn:active{transform:scale(.97)}.gbtn svg{width:20px;height:20px}
+.art{aspect-ratio:4/3;padding:16px;display:grid;place-items:center}
+.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;animation:sp .8s linear infinite;display:inline-block;vertical-align:-3px}@keyframes sp{to{transform:rotate(1turn)}}
+/* Sheets: one at a time, grabber, swipe down to dismiss, Cancel + confirming action */
+.scrim{position:fixed;inset:0;background:var(--scrim);opacity:0;z-index:10;pointer-events:none}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;max-height:calc(100svh - env(safe-area-inset-top) - 12px);background:var(--bg);border-radius:14px 14px 0 0;box-shadow:var(--shadow);display:flex;flex-direction:column;transform:translateY(110%);visibility:hidden}
+.sheet.open{visibility:visible}
+.grab{display:grid;place-items:center;height:20px;flex:none;touch-action:none;cursor:grab}.grab i{width:36px;height:5px;border-radius:3px;background:var(--sep)}
+.sbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 10px 6px;flex:none;touch-action:none}
+.sbar .r{justify-self:end}.sbar h2{font-size:1.0625rem;font-weight:600;margin:0;text-align:center}
+.sbody{overflow:auto;padding:6px 16px calc(28px + env(safe-area-inset-bottom));overscroll-behavior:contain}
+@media(min-width:700px){.sheet{left:50%;right:auto;bottom:auto;top:50%;width:560px;border-radius:14px;max-height:min(760px,90svh);transform:translate(-50%,-50%) scale(.96);opacity:0}.grab{display:none}.sbar{padding-top:10px}}
+/* Form rows (grouped) */
+.grp{background:var(--card);border-radius:12px;overflow:hidden;margin-bottom:22px}
+.grp .gh{margin:0 16px 6px;text-transform:none}
+.fr{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;min-height:46px;padding:0 16px;position:relative}
+.fr+.fr::before{content:"";position:absolute;top:0;left:16px;right:0;height:.5px;background:var(--sep)}
+.fr>span{white-space:nowrap}
+.fr input,.fr select,.fr textarea{font:inherit;letter-spacing:inherit;color:var(--label2);background:transparent;border:0;text-align:right;min-height:44px;width:100%;padding:0;-webkit-appearance:none;appearance:none}
+.fr input::placeholder,.fr textarea::placeholder{color:var(--label2);opacity:.7}
+.fr input:focus,.fr select:focus,.fr textarea:focus{color:var(--label);outline:none}
+.fr.full{grid-template-columns:minmax(0,1fr)}.fr.full input,.fr.full textarea{text-align:left;color:var(--label)}
+.fr textarea{padding:12px 0;resize:none;min-height:70px}
+.fr select{cursor:pointer;padding-right:18px;background:linear-gradient(45deg,transparent 50%,var(--label2) 50%) right 6px center/6px 6px no-repeat,linear-gradient(-45deg,transparent 50%,var(--label2) 50%) right 0 center/6px 6px no-repeat;background-size:6px 6px;background-position:right 5px top 52%,right 0 top 52%}
+.fr.btnrow{grid-template-columns:1fr;padding:0}.fr.btnrow button{min-height:46px;text-align:left;padding:0 16px;color:var(--tint)}.fr.btnrow button.danger{color:var(--red)}
+.fr.btnrow button:active{background:var(--fill)}
+.foot{margin:-14px 16px 22px}
+.amtw{display:flex;align-items:center;justify-content:flex-end;gap:4px;color:var(--label2)}
+.sw{position:relative;width:51px;height:31px;flex:none;justify-self:end}
+.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
+.sw i{position:absolute;inset:0;border-radius:16px;background:var(--swoff);transition:background .2s}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgb(0 0 0/.15),0 1px 1px rgb(0 0 0/.16);transition:transform .25s cubic-bezier(.3,.7,.4,1)}
+.sw input:checked+i{background:var(--swon)}.sw input:checked+i::after{transform:translateX(20px)}
+.sw input:focus-visible+i{outline:3px solid var(--tint);outline-offset:2px}
+.presets{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -16px 18px;padding:0 16px}.presets::-webkit-scrollbar{display:none}
+.presets .chip{background:var(--card)}
+/* Action sheet for discard confirmation */
+.confirm{position:absolute;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));z-index:3;display:grid;gap:8px}
+.confirm .grp{margin:0;text-align:center}.confirm .grp p{margin:0;padding:14px}
+.confirm button{min-height:56px;width:100%;font-size:1.25rem;color:var(--tint)}.confirm .danger{color:var(--red)}.confirm .b{font-weight:600}
+.confirm .grp button+button{box-shadow:0 -.5px 0 var(--sep)}
+.confirm::before{content:"";position:fixed;inset:0;background:var(--scrim);z-index:-1} /* dims the sheet behind the action sheet */
+/* Toast: non-modal feedback with Undo */
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));z-index:12;transform:translate(-50%,160%);display:flex;align-items:center;gap:10px;padding:6px 6px 6px 18px;border-radius:16px;background:rgb(30 30 32/.92);color:#fff;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:var(--shadow);width:max-content;max-width:min(560px,calc(100vw - 24px))}
+.toast button{flex:none;color:#4DA8FF;font-weight:600;min-height:44px;padding:0 12px}
+@media(max-width:760px){.hero,.gate .in{grid-template-columns:minmax(0,1fr)}.gate .art{order:-1;aspect-ratio:16/10}}
+@media(max-width:600px){.next .d{font-size:3rem}.stats b{font-size:1.125rem}.stats div{padding:12px}}
+@media(prefers-reduced-transparency:reduce){.nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}.toast{background:#1E1E20;backdrop-filter:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.btn:active,.press:active,.chip:active,.gbtn:active{transform:none}}
+/* Additions */
+.gmsg{margin:14px 0 0;max-width:380px}.gmsg+.gmsg{margin-top:8px}.legal a{color:var(--tint)}
+.fr.btnrow a{display:flex;align-items:center;min-height:46px;padding:0 16px;color:var(--tint);text-decoration:none}.fr.btnrow a:active{background:var(--fill)}
+.ebtns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+/* Sign-in illustration: labels get a halo in the card colour, so leader lines never run through text */
+.art .halo text{paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round}
+/* Google's sign-in button: dark theme per Google's branding guidelines */
+@media(prefers-color-scheme:dark){.gbtn{background:#131314;color:#E3E3E3;box-shadow:inset 0 0 0 1px #8E918F}}
+/* Phones: the illustration takes only the height it needs, so the sign-in buttons sit higher */
+@media(max-width:760px){.gate .art{aspect-ratio:auto;padding:12px}.gate .art svg{height:auto}}
+</style></head><body>
+
+<!-- SIGN-IN -->
+<section class="gate" id="gate"><div class="in">
+ <div>
+  <h1>Payments Ahead</h1>
+  <p class="lede">Every bill, premium and renewal, from this month to ten years out.</p>
+  <ul class="feat">
+   <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><div><b>Monthly to once a decade</b><div class="sub">Rent, insurance premiums, passport and licence renewals, all on one timeline.</div></div></li>
+   <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><div><b>Reminders on any phone</b><div class="sub">Alerts come from Google Calendar, on Android and iPhone.</div></div></li>
+   <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><div><b>Your data stays yours</b><div class="sub">On this device, or in a private folder in your own Google Drive. No one else's server holds it.</div></div></li>
+  </ul>
+  <div class="gstack">
+   <button class="gbtn" id="signin"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg><span id="signinTxt">Sign in with Google</span></button>
+   <button class="btn sec" id="localBtn">Use Without an Account</button>
+  </div>
+  <p class="fn gmsg" id="gateMsg" role="status">Payments Ahead asks only for your email and its own private folder in your Drive. It can't see your other files.</p>
+  <p class="fn gmsg legal">By continuing, you agree to the <a href="terms.html">Terms of Use</a> and <a href="privacy.html">Privacy Policy</a>.</p>
+ </div>
+ <div class="art card" aria-hidden="true"><svg viewBox="0 14 400 236" width="100%" height="100%" style="color:var(--label)" font-family="-apple-system,system-ui,sans-serif">
+  <rect x="20" y="210" width="360" height="2" fill="currentColor"/>
+  <g fill="currentColor" opacity=".5"><rect x="20" y="198" width="1.5" height="12"/><rect x="140" y="198" width="1.5" height="12"/><rect x="260" y="198" width="1.5" height="12"/><rect x="378" y="198" width="1.5" height="12"/></g>
+  <g font-size="13" fill="currentColor" opacity=".65"><text x="20" y="232">Today</text><text x="128" y="232">1 mo</text><text x="250" y="232">1 yr</text><text x="352" y="232">10 yr</text></g>
+  <circle cx="34" cy="200" r="9" fill="#FFE600" stroke="#111" stroke-width="1.5"/>
+  <g fill="currentColor"><circle cx="60" cy="202" r="5"/><circle cx="92" cy="201" r="6"/><circle cx="118" cy="203" r="4"/><circle cx="226" cy="199" r="9"/><circle cx="290" cy="201" r="6"/><circle cx="350" cy="203" r="4"/></g>
+  <g stroke="currentColor" opacity=".3"><line x1="226" y1="190" x2="226" y2="122"/><line x1="290" y1="195" x2="290" y2="152"/><line x1="350" y1="199" x2="350" y2="92"/></g>
+  <g class="halo" font-size="14" fill="currentColor" font-weight="500"><text x="230" y="120">Health insurance</text><text x="294" y="150">Car insurance</text><text x="346" y="88" text-anchor="end">Passport renewal</text></g>
+  <rect x="20" y="30" width="170" height="96" rx="18" fill="#FFE600"/>
+  <g fill="#111"><text x="36" y="56" font-size="13" font-weight="600">Next up</text><text x="36" y="80" font-size="19" font-weight="700">Rent</text><text x="36" y="113" font-size="30" font-weight="300">5 days</text></g>
+ </svg></div>
+</div></section>
+
+<!-- APP -->
+<div id="app" class="hidden">
+ <header class="nav" id="nav">
+  <div><button class="icon press" id="settingsBtn" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div>
+  <div class="ttl" aria-hidden="true">Payments</div>
+  <div class="r"><button class="icon press" id="add" aria-label="Add Payment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button></div>
+ </header>
+ <main>
+  <div class="head"><h1 class="lt">Payments</h1><span class="sub" id="who"></span></div>
+  <div class="hero"><div class="next" id="next"></div><div class="card ruler"><div class="fig"><svg id="svg" role="img" aria-label="Timeline of upcoming payments, from today to ten years ahead"></svg></div></div></div>
+  <div class="card stats" id="stats"></div>
+  <div class="status fn" role="status"><span id="saveStat"></span><span id="calStat"></span></div>
+  <div class="card banner hidden" id="reauth"><span class="sub" style="color:var(--label)">Your Google session ended. Changes are kept on this device until you reconnect.</span><button class="btn pri" id="reauthBtn" style="min-height:44px">Reconnect</button></div>
+  <div class="chips" id="filters" role="toolbar" aria-label="Filter by category"></div>
+  <div id="list"></div>
+  <p class="fn" id="hint" style="text-align:center;margin:22px 0 0">Tap a circle to mark a payment paid. Swipe a row left for more.</p>
+ </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- EDITOR SHEET -->
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="ft">
+ <div class="grab" data-grab><i></i></div>
+ <div class="sbar" data-grab><div><button class="link" id="f_x">Cancel</button></div><h2 id="ft">New Payment</h2><div class="r"><button class="link b" id="f_save">Add</button></div></div>
+ <div class="sbody">
+  <div class="presets" id="presets" aria-label="Common payments"></div>
+  <form id="f" novalidate>
+   <div class="grp">
+    <label class="fr full"><input id="f_name" maxlength="120" placeholder="Name, e.g. Health Insurance" autocomplete="off" enterkeyhint="next" aria-label="Name"></label>
+    <label class="fr"><span>Amount</span><span class="amtw"><span id="f_cur">₹</span><input id="f_amt" type="number" inputmode="decimal" min="0" step="any" placeholder="0" style="max-width:9em"></span></label>
+   </div>
+   <div class="grp">
+    <label class="fr"><span>Next Due</span><input id="f_due" type="date"></label>
+    <label class="fr"><span>Repeats</span><select id="f_every"></select></label>
+    <label class="fr hidden" id="f_nw"><span>Every</span><select id="f_years"></select></label>
+    <label class="fr hidden" id="f_nm"><span>Every</span><select id="f_months"></select></label>
+    <label class="fr"><span>Remind Me</span><select id="f_rem"></select></label>
+   </div>
+   <div class="grp">
+    <label class="fr"><span>Category</span><select id="f_cat"></select></label>
+    <div class="fr"><span id="f_auto_l">Paid by Autopay</span><span class="sw"><input id="f_auto" type="checkbox" role="switch" aria-labelledby="f_auto_l"><i></i></span></div>
+   </div>
+   <div class="grp"><label class="fr full"><textarea id="f_notes" rows="2" maxlength="500" placeholder="Notes: policy number, agent's phone" aria-label="Notes"></textarea></label></div>
+   <p class="fn foot" id="f_err" role="alert"></p>
+   <div class="hidden" id="f_gcal">
+    <p class="fn gh" style="margin:0 16px 6px">GOOGLE CALENDAR</p>
+    <div class="grp"><div class="fr btnrow"><a id="f_gc_due" target="_blank" rel="noopener">Add Due Date to Google Calendar</a></div><div class="fr btnrow"><a id="f_gc_head" target="_blank" rel="noopener">Add Heads-Up</a></div></div>
+    <p class="fn foot">Opens Google Calendar with the event filled in, repeats included. Tap Save there. No sign-in to Payments Ahead needed.</p>
+   </div>
+   <div class="grp" id="f_delg"><div class="fr btnrow"><button type="button" class="danger" id="f_del">Delete Payment</button></div></div>
+  </form>
+ </div>
+ <div class="confirm hidden" id="confirm"><div class="grp"><p class="fn">You have unsaved changes.</p><button class="danger" id="c_discard">Discard Changes</button></div><div class="grp"><button class="b" id="c_keep">Keep Editing</button></div></div>
+</section>
+
+<!-- SETTINGS SHEET -->
+<section class="sheet" id="setSheet" role="dialog" aria-modal="true" aria-labelledby="st">
+ <div class="grab" data-grab><i></i></div>
+ <div class="sbar" data-grab><div></div><h2 id="st">Settings</h2><div class="r"><button class="link b" id="setX">Done</button></div></div>
+ <div class="sbody">
+  <p class="fn gh" style="margin:0 16px 6px">ACCOUNT</p>
+  <div class="grp"><div class="fr"><span id="acct">Not signed in</span><span></span></div><div class="fr btnrow"><button id="signout">Sign Out</button></div></div>
+  <div class="grp"><label class="fr"><span>Currency</span><select id="cur"><option value="INR">₹ Indian Rupee</option><option value="USD">$ US Dollar</option><option value="EUR">€ Euro</option><option value="GBP">£ British Pound</option><option value="AED">UAE Dirham</option><option value="SAR">Saudi Riyal</option></select></label></div>
+  <p class="fn gh" style="margin:0 16px 6px">REMINDERS</p>
+  <div class="grp">
+   <div class="fr"><span id="calL">Google Calendar</span><span class="sw"><input id="calSw" type="checkbox" role="switch" aria-labelledby="calL"><i></i></span></div>
+   <div class="fr btnrow hidden" id="calSyncRow"><button id="calSync">Sync Calendar Now</button></div>
+  </div>
+  <p class="fn foot" id="calInfo"></p>
+  <div class="grp"><div class="fr btnrow"><button id="icsBtn">Download Calendar File (.ics)</button></div></div>
+  <p class="fn foot">Adds every payment at once. Apple Calendar, Outlook or Samsung Calendar: open the file. Google Calendar: on a computer, go to calendar.google.com › Settings › Import &amp; Export and import the file.</p>
+  <p class="fn gh" style="margin:0 16px 6px">DATA</p>
+  <div class="grp"><div class="fr btnrow"><button id="exportBtn">Export Payments (.json)</button></div><div class="fr btnrow"><button id="importBtn">Import Payments…</button></div></div>
+  <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+  <p class="fn foot" id="dataInfo"></p>
+  <div class="grp"><div class="fr btnrow"><button class="danger" id="wipeBtn">Delete All My Data…</button></div></div>
+  <p class="fn foot" id="wipeInfo"></p>
+  <p class="fn gh" style="margin:0 16px 6px">ABOUT</p>
+  <div class="grp"><div class="fr btnrow"><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></div><div class="fr btnrow"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a></div></div>
+ </div>
+ <div class="confirm hidden" id="wipeConfirm"><div class="grp"><p class="fn" id="w_msg"></p><button class="danger" id="w_go">Delete Everything</button></div><div class="grp"><button class="b" id="w_keep">Cancel</button></div></div>
+</section>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="tmsg"></span><button id="undo">Undo</button></div>
+
+<script src="app.js"></script>
+</body></html>
