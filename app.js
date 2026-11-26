@@ -170,7 +170,9 @@ async function upsert(id,body){const base=`${CAL}/calendars/${encodeURIComponent
  if(id){try{const r=await api(`${base}/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return r.id}catch(e){if(e.status!==404&&e.status!==410)throw e}}
  const r=await api(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return r.id}
 async function del(id){try{await api(`${CAL}/calendars/${encodeURIComponent(S.cal.id)}/events/${encodeURIComponent(id)}`,{method:'DELETE'})}catch(e){if(e.status!==404&&e.status!==410)throw e}}
-async function calSync(){if(!S.cal||!S.cal.on||mode!=='google'||calBusy)return;calBusy=true;$('calStat').innerHTML='<span class="spin" style="width:12px;height:12px;border-width:2px;margin-right:6px"></span>Updating Google Calendar…';
+async function calSync(){if(!S.cal||!S.cal.on||mode!=='google')return;
+ if(calBusy){calAgain=true;return}/* a change arrived mid-sync: run again when this one ends, so it isn't dropped */
+ calBusy=true;calAgain=false;calPending=false;$('calStat').innerHTML='<span class="spin" style="width:12px;height:12px;border-width:2px;margin-right:6px"></span>Updating Google Calendar…';
  try{await calEnsure();const ev=S.cal.ev||(S.cal.ev={}),ids=new Set(S.items.map(i=>i.id));
   for(const k of Object.keys(ev))if(!ids.has(k)){if(ev[k].m)await del(ev[k].m);if(ev[k].h)await del(ev[k].h);delete ev[k]}
   for(const i of S.items){const sig=JSON.stringify([i.name,i.amt,i.every,i.due,i.remind,i.auto,i.notes,i.cat,S.cur]),e=ev[i.id]||{};
@@ -180,7 +182,7 @@ async function calSync(){if(!S.cal||!S.cal.on||mode!=='google'||calBusy)return;c
    e.sig=sig;ev[i.id]=e}
   calBusy=false;await persist(true);status()}
  catch(e){calBusy=false;$('calStat').innerHTML='<span class="dot err"></span>Calendar not updated'+(e.expired?'. Reconnect to retry.':'. It will retry on your next change.');console.warn(e)}
- finally{calBusy=false}}
+ finally{calBusy=false;if(calAgain&&mode==='google'){calAgain=false;calSync()}}}
 
 /* "Add to Google Calendar" link: opens Google Calendar with the event filled in (repeats included). Needs no sign-in in this app. */
 function gcalUrl(i,head){const b=evBody(i,head),f=s=>s.replace(/[-:]/g,'').slice(0,15);
@@ -190,13 +192,16 @@ function gcalUrl(i,head){const b=evBody(i,head),f=s=>s.replace(/[-:]/g,'').slice
 
 /* ---------- save pipeline ---------- */
 let saveT=null;
-async function persist(now){S.t=Date.now();cacheSave();if(mode!=='google')return;
+async function persist(now){S.t=Date.now();if(mode==='google')S.dirty=true;/* unsaved until Drive confirms: a quick close can't lose it */cacheSave();if(mode!=='google')return;
  pending=true;status();clearTimeout(saveT);
- const go=async()=>{if(saving){saveT=setTimeout(go,800);return}saving=true;pending=false;
-  try{await driveSave();lastSaved=new Date();S.dirty=false;$('reauth').classList.add('hidden')}catch(e){S.dirty=true;console.warn(e)}finally{saving=false;cacheSave();status()}};
+ const go=async()=>{if(saving){saveT=setTimeout(go,800);return}saving=true;pending=false;const t0=S.t;
+  try{await driveSave();lastSaved=new Date();if(S.t===t0)S.dirty=false;$('reauth').classList.add('hidden')}catch(e){S.dirty=true;console.warn(e)}finally{saving=false;cacheSave();status()}};
  if(now)await go();else saveT=setTimeout(go,900)}
-let calT=null;
-function commit(msg,undoable=true){render();if(msg)toast(msg,undoable);persist(false);clearTimeout(calT);calT=setTimeout(calSync,2500)}
+let calT=null,calPending=false,calAgain=false;
+function commit(msg,undoable=true){render();if(msg)toast(msg,undoable);persist(false);clearTimeout(calT);if(S.cal&&S.cal.on){calPending=true;calT=setTimeout(calSync,1500)}}
+/* leaving the app (switching apps, locking the phone, closing the tab): save to Drive and update the calendar now, not after the short delay */
+function flush(){if(mode!=='google')return;if(pending){clearTimeout(saveT);persist(true)}if(calPending){clearTimeout(calT);calSync()}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flush()});addEventListener('pagehide',flush);
 
 /* ---------- sign-in flows ---------- */
 async function startGoogle(hint){
@@ -209,7 +214,7 @@ async function startGoogle(hint){
   const cached=cacheLoad();const remote=await driveLoad();let moved=0;
   if(remote&&cached&&cached.dirty&&cached.t>remote.t)S=cached;else if(remote)S=remote;else if(cached)S=cached;
   else{const loc=cacheLoad('pa:local');S={v:1,items:[],cur:'INR',t:Date.now()};if(loc&&loc.items.length){S.items=loc.items;S.cur=loc.cur;moved=loc.items.length}}
-  btn.disabled=false;setSigninLabel();showApp();if(!remote||S.dirty)persist(true);
+  btn.disabled=false;setSigninLabel();showApp();if(!remote||S.dirty)persist(true);if(S.cal&&S.cal.on)calSync();
   if(moved)toast(`Copied ${moved} payment${moved===1?'':'s'} from this device to your Google Drive`,false)}
  catch(e){console.warn(e);fail('Couldn\'t reach your Google Drive. Try again in a moment.')}}
 function setSigninLabel(){let h=null;try{h=localStorage.getItem('pa:hint')}catch(e){}$('signinTxt').textContent=h?'Continue as '+h:'Sign in with Google'}
@@ -221,7 +226,7 @@ $('signin').onclick=()=>{let h=null;try{h=localStorage.getItem('pa:hint')}catch(
 $('localBtn').onclick=()=>{mode='local';S=cacheLoad()||{v:1,cur:'INR',items:[],t:Date.now()};showApp();
  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().catch(()=>{})}catch(e){}};/* ask the browser not to evict this data */
 /* back to the sign-in screen with nothing of the previous session left in memory (incl. undo history, so it can't leak into another account) */
-function toGate(msg){closeSheet(true);clearTimeout(saveT);clearTimeout(calT);token=null;tokenExp=0;user=null;fileId=null;mode=null;undoStack=[];filter='All';
+function toGate(msg){closeSheet(true);clearTimeout(saveT);clearTimeout(calT);calPending=calAgain=false;token=null;tokenExp=0;user=null;fileId=null;mode=null;undoStack=[];filter='All';
  S={v:1,items:[],cur:'INR'};toastTo(false);$('reauth').classList.add('hidden');$('app').classList.add('hidden');$('gate').classList.remove('hidden');
  setSigninLabel();$('gateMsg').textContent=msg;scrollTo(0,0)}
 $('signout').onclick=async()=>{

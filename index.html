@@ -236,7 +236,7 @@ main{max-width:980px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right)
    <div class="hidden" id="f_gcal">
     <p class="fn gh" style="margin:0 16px 6px">GOOGLE CALENDAR</p>
     <div class="grp"><div class="fr btnrow"><a id="f_gc_due" target="_blank" rel="noopener">Add Due Date to Google Calendar</a></div><div class="fr btnrow"><a id="f_gc_head" target="_blank" rel="noopener">Add Heads-Up</a></div></div>
-    <p class="fn foot">Opens Google Calendar with the event filled in, repeats included. Tap Save there. No sign-in to Payments Ahead needed.</p>
+    <p class="fn foot">Opens Google Calendar with the event filled in, repeats included. Tap Save there. This adds a copy: if you later change or delete this payment, change or delete the event in your calendar too.</p>
    </div>
    <div class="grp" id="f_delg"><div class="fr btnrow"><button type="button" class="danger" id="f_del">Delete Payment</button></div></div>
   </form>
@@ -259,7 +259,7 @@ main{max-width:980px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right)
   </div>
   <p class="fn foot" id="calInfo"></p>
   <div class="grp"><div class="fr btnrow"><button id="icsBtn">Download Calendar File (.ics)</button></div></div>
-  <p class="fn foot">Adds every payment at once. Apple Calendar, Outlook or Samsung Calendar: open the file. Google Calendar: on a computer, go to calendar.google.com › Settings › Import &amp; Export and import the file.</p>
+  <p class="fn foot">Adds every payment at once. Apple Calendar, Outlook or Samsung Calendar: open the file. Google Calendar: on a computer, go to calendar.google.com › Settings › Import &amp; Export and import the file. These are copies: they don't change when you edit or delete payments here.</p>
   <p class="fn gh" style="margin:0 16px 6px">DATA</p>
   <div class="grp"><div class="fr btnrow"><button id="exportBtn">Export Payments (.json)</button></div><div class="fr btnrow"><button id="importBtn">Import Payments…</button></div></div>
   <input type="file" id="importFile" accept="application/json,.json" class="hidden">
